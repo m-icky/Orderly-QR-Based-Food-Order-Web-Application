@@ -1,0 +1,25 @@
+{
+  "name": "orderly",
+  "version": "1.0.0",
+  "description": "Orderly – QR-Based Food Order Web Application",
+  "scripts": {
+    "install:all": "cd backend && npm install && cd ../frontend && npm install",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "seed": "cd backend && npm run seed",
+    "build:frontend": "cd frontend && npm run build",
+    "start": "concurrently -n BACKEND,FRONTEND -c green,blue \"npm run dev:backend\" \"npm run dev:frontend\""
+  },
+  "keywords": [
+    "food-ordering",
+    "qr-code",
+    "restaurant",
+    "nodejs",
+    "react"
+  ],
+  "author": "Orderly",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
