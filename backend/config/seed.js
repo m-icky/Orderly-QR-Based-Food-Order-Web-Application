@@ -1,27 +1,35 @@
-const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const dotenv = require('dotenv');
 dotenv.config();
 
-const connectDB = require('./db');
-const User = require('../models/User');
+const supabase = require('./supabase');
 
 const seed = async () => {
-  await connectDB();
+  const { data: existing, error } = await supabase
+    .from('users')
+    .select('id')
+    .eq('role', 'super_admin')
+    .single();
 
-  const existing = await User.findOne({ role: 'super_admin' });
   if (existing) {
     console.log('Super admin already exists.');
     process.exit(0);
   }
 
   const hashedPassword = await bcrypt.hash('superadmin123', 12);
-  await User.create({
-    name: 'Super Admin',
-    email: 'superadmin@orderly.com',
-    password: hashedPassword,
-    role: 'super_admin',
-  });
+  
+  const { data: user, error: insertError } = await supabase
+    .from('users')
+    .insert({
+      name: 'Super Admin',
+      email: 'superadmin@orderly.com',
+      password: hashedPassword,
+      role: 'super_admin',
+    })
+    .select()
+    .single();
+
+  if (insertError) throw insertError;
 
   console.log('✅ Super Admin created:');
   console.log('   Email: superadmin@orderly.com');

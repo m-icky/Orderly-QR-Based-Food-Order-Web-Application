@@ -1,86 +1,126 @@
 const express = require('express');
 const router = express.Router();
-const FoodItem = require('../models/FoodItem');
+const supabase = require('../config/supabase');
 const { protect, authorize } = require('../middleware/auth');
 const upload = require('../middleware/upload');
+const { uploadToSupabase } = require('../utils/supabaseStorage');
 
-// GET /api/food/:shopId — All items for a shop (admin view, includes unavailable)
-router.get('/:shopId', protect, authorize('admin', 'super_admin'), async (req, res) => {
+// GET /api/food/shop/:shopId — public (customer)
+router.get('/shop/:shopId', async (req, res) => {
   try {
-    const items = await FoodItem.find({ shopId: req.params.shopId })
-      .sort({ category: 1, sortOrder: 1 });
-    res.json({ items });
+    const { data: items, error } = await supabase
+      .from('food_items')
+      .select('*')
+      .eq('shop_id', req.params.shopId)
+      .eq('is_available', true)
+      .order('sort_order', { ascending: true });
+
+    if (error) throw error;
+
+    const mappedItems = items.map(item => ({ ...item, _id: item.id }));
+    res.json(mappedItems);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
 
-// POST /api/food — Create food item
+// GET /api/food/admin/me — admin's own food items
+router.get('/admin/me', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { data: items, error } = await supabase
+      .from('food_items')
+      .select('*')
+      .eq('shop_id', req.user.shop_id)
+      .order('category', { ascending: true })
+      .order('sort_order', { ascending: true });
+
+    if (error) throw error;
+
+    const mappedItems = items.map(item => ({ ...item, _id: item.id }));
+    res.json(mappedItems);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// POST /api/food — admin create item
 router.post('/', protect, authorize('admin'), upload.single('image'), async (req, res) => {
   try {
-    const { name, description, price, category, isVeg, isAvailable, tags } = req.body;
-    let image = req.body.image;
-    
+    const itemData = {
+      ...req.body,
+      shop_id: req.user.shop_id,
+      price: parseFloat(req.body.price),
+      is_veg: req.body.is_veg === 'true' || req.body.is_veg === true,
+      is_available: req.body.is_available === 'true' || req.body.is_available === true,
+      sort_order: parseInt(req.body.sort_order || 0),
+    };
+
     if (req.file) {
-      image = `/uploads/${req.file.filename}`;
+      itemData.image = await uploadToSupabase(req.file);
     }
 
-    if (!name || !price || !category) {
-      return res.status(400).json({ message: 'Name, price, and category are required.' });
+    // Handle tags if sent as string
+    if (typeof itemData.tags === 'string') {
+      itemData.tags = itemData.tags.split(',').map(t => t.trim()).filter(t => t);
     }
 
-    const shopId = req.user.shopId;
-    if (!shopId) return res.status(400).json({ message: 'Admin has no shop assigned.' });
+    const { data: item, error } = await supabase
+      .from('food_items')
+      .insert(itemData)
+      .select()
+      .single();
 
-    const item = await FoodItem.create({
-      shopId, name, description, price, image, category,
-      isVeg: isVeg !== undefined ? isVeg : true,
-      isAvailable: isAvailable !== undefined ? isAvailable : true,
-      tags: tags || [],
-    });
+    if (error) throw error;
 
-    res.status(201).json({ item });
+    item._id = item.id;
+    res.status(201).json(item);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
 
-// PUT /api/food/:id — Update food item
+// PUT /api/food/:id — admin update item
 router.put('/:id', protect, authorize('admin'), upload.single('image'), async (req, res) => {
   try {
-    const item = await FoodItem.findById(req.params.id);
-    if (!item) return res.status(404).json({ message: 'Food item not found.' });
+    const updates = {
+      ...req.body,
+    };
 
-    // Ensure admin owns this item
-    if (item.shopId.toString() !== req.user.shopId?.toString()) {
-      return res.status(403).json({ message: 'Not authorized.' });
-    }
+    if (updates.price) updates.price = parseFloat(updates.price);
+    if (updates.is_veg !== undefined) updates.is_veg = updates.is_veg === 'true' || updates.is_veg === true;
+    if (updates.is_available !== undefined) updates.is_available = updates.is_available === 'true' || updates.is_available === true;
+    if (updates.sort_order) updates.sort_order = parseInt(updates.sort_order);
 
-    const updates = { ...req.body };
     if (req.file) {
-      updates.image = `/uploads/${req.file.filename}`;
+      updates.image = await uploadToSupabase(req.file);
     }
 
-    Object.assign(item, updates);
-    await item.save();
-    res.json({ item });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-// DELETE /api/food/:id — Delete food item
-router.delete('/:id', protect, authorize('admin'), async (req, res) => {
-  try {
-    const item = await FoodItem.findById(req.params.id);
-    if (!item) return res.status(404).json({ message: 'Food item not found.' });
-
-    if (item.shopId.toString() !== req.user.shopId?.toString()) {
-      return res.status(403).json({ message: 'Not authorized.' });
+    if (typeof updates.tags === 'string') {
+      updates.tags = updates.tags.split(',').map(t => t.trim()).filter(t => t);
     }
 
-    await item.deleteOne();
-    res.json({ message: 'Food item deleted.' });
+    // Clean updates
+    delete updates._id;
+    delete updates.id;
+    delete updates.shop_id;
+    delete updates.created_at;
+    delete updates.updated_at;
+
+    const { data: item, error } = await supabase
+      .from('food_items')
+      .update(updates)
+      .eq('id', req.params.id)
+      .eq('shop_id', req.user.shop_id)
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') return res.status(404).json({ message: 'Item not found.' });
+      throw error;
+    }
+
+    item._id = item.id;
+    res.json(item);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -89,16 +129,43 @@ router.delete('/:id', protect, authorize('admin'), async (req, res) => {
 // PATCH /api/food/:id/toggle — Toggle availability
 router.patch('/:id/toggle', protect, authorize('admin'), async (req, res) => {
   try {
-    const item = await FoodItem.findById(req.params.id);
-    if (!item) return res.status(404).json({ message: 'Food item not found.' });
+    const { data: item, error: fetchError } = await supabase
+      .from('food_items')
+      .select('is_available')
+      .eq('id', req.params.id)
+      .eq('shop_id', req.user.shop_id)
+      .single();
 
-    if (item.shopId.toString() !== req.user.shopId?.toString()) {
-      return res.status(403).json({ message: 'Not authorized.' });
-    }
+    if (fetchError || !item) return res.status(404).json({ message: 'Item not found.' });
 
-    item.isAvailable = !item.isAvailable;
-    await item.save();
-    res.json({ item });
+    const { data: updatedItem, error: updateError } = await supabase
+      .from('food_items')
+      .update({ is_available: !item.is_available })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+
+    if (updateError) throw updateError;
+
+    updatedItem._id = updatedItem.id;
+    res.json(updatedItem);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// DELETE /api/food/:id — admin delete item
+router.delete('/:id', protect, authorize('admin', 'super_admin'), async (req, res) => {
+  try {
+    const { error } = await supabase
+      .from('food_items')
+      .delete()
+      .eq('id', req.params.id)
+      .eq('shop_id', req.user.shop_id);
+
+    if (error) throw error;
+
+    res.json({ message: 'Item deleted successfully.' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

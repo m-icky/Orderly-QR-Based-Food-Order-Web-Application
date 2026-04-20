@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const supabase = require('../config/supabase');
 
 const protect = async (req, res, next) => {
   try {
@@ -11,9 +11,24 @@ const protect = async (req, res, next) => {
     const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const user = await User.findById(decoded.id).populate('shopId');
-    if (!user || !user.isActive) {
+    // Fetch user from Supabase
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*, shops(*)')
+      .eq('id', decoded.id)
+      .single();
+
+    if (error || !user || !user.is_active) {
       return res.status(401).json({ message: 'User not found or deactivated.' });
+    }
+
+    // Map id to _id and reorganize shops data to match Mongoose populate('shopId')
+    user._id = user.id;
+    if (user.shops) {
+      user.shopId = { ...user.shops, _id: user.shops.id };
+      delete user.shops;
+    } else {
+      user.shopId = user.shop_id;
     }
 
     req.user = user;

@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const bcrypt = require('bcryptjs');
+const supabase = require('../config/supabase');
 const { protect } = require('../middleware/auth');
 
 const signToken = (id) => {
@@ -19,26 +20,37 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: 'Email and password are required.' });
     }
 
-    const user = await User.findOne({ email }).populate('shopId');
-    if (!user || !user.isActive) {
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*, shops(*)')
+      .eq('email', email.toLowerCase())
+      .single();
+
+    if (error || !user || !user.is_active) {
       return res.status(401).json({ message: 'Invalid credentials.' });
     }
 
-    const isMatch = await user.comparePassword(password);
+    const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid credentials.' });
     }
 
-    const token = signToken(user._id);
+    const token = signToken(user.id);
+
+    // Map shops to shopId for frontend
+    let shopIdObj = user.shop_id;
+    if (user.shops) {
+      shopIdObj = { ...user.shops, _id: user.shops.id };
+    }
 
     res.json({
       token,
       user: {
-        _id: user._id,
+        _id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
-        shopId: user.shopId,
+        shopId: shopIdObj,
       }
     });
   } catch (error) {
@@ -55,15 +67,28 @@ router.get('/me', protect, async (req, res) => {
 router.post('/change-password', protect, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
-    const user = await User.findById(req.user._id);
+    
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('password')
+      .eq('id', req.user.id)
+      .single();
 
-    const isMatch = await user.comparePassword(currentPassword);
+    if (error || !user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
     if (!isMatch) {
       return res.status(400).json({ message: 'Current password is incorrect.' });
     }
 
-    user.password = newPassword;
-    await user.save();
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+    
+    await supabase
+      .from('users')
+      .update({ password: hashedPassword })
+      .eq('id', req.user.id);
 
     res.json({ message: 'Password updated successfully.' });
   } catch (error) {

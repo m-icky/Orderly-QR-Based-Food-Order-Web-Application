@@ -1,10 +1,24 @@
 const express = require('express');
 const router = express.Router();
-const Order = require('../models/Order');
-const FoodItem = require('../models/FoodItem');
-const Shop = require('../models/Shop');
+const supabase = require('../config/supabase');
 const { protect, authorize } = require('../middleware/auth');
 const { getIO } = require('../socket/socketManager');
+
+// Helper to generate unique 5-digit order ID
+async function generateOrderId() {
+  let orderId;
+  let exists = true;
+  while (exists) {
+    orderId = Math.floor(10000 + Math.random() * 90000).toString();
+    const { data } = await supabase
+      .from('orders')
+      .select('order_id')
+      .eq('order_id', orderId)
+      .single();
+    if (!data) exists = false;
+  }
+  return orderId;
+}
 
 // POST /api/orders — Place new order (public)
 router.post('/', async (req, res) => {
@@ -18,8 +32,13 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ message: 'shopId, items, and paymentMethod are required.' });
     }
 
-    const shop = await Shop.findById(shopId);
-    if (!shop || !shop.isOpen) {
+    const { data: shop, error: shopError } = await supabase
+      .from('shops')
+      .select('*')
+      .eq('id', shopId)
+      .single();
+
+    if (shopError || !shop || !shop.is_open) {
       return res.status(400).json({ message: 'Shop not found or is closed.' });
     }
 
@@ -28,37 +47,50 @@ router.post('/', async (req, res) => {
     const orderItems = [];
 
     for (const cartItem of items) {
-      const foodItem = await FoodItem.findById(cartItem.itemId);
-      if (!foodItem || !foodItem.isAvailable) {
+      const { data: foodItem } = await supabase
+        .from('food_items')
+        .select('*')
+        .eq('id', cartItem.itemId)
+        .single();
+
+      if (!foodItem || !foodItem.is_available) {
         return res.status(400).json({ message: `Item "${cartItem.name}" is no longer available.` });
       }
       const qty = Math.max(1, parseInt(cartItem.quantity));
       totalAmount += foodItem.price * qty;
       orderItems.push({
-        itemId: foodItem._id,
+        itemId: foodItem.id,
         name: foodItem.name,
         price: foodItem.price,
         quantity: qty,
         image: foodItem.image,
-        isVeg: foodItem.isVeg,
+        isVeg: foodItem.is_veg,
       });
     }
 
-    const orderId = await Order.generateOrderId();
+    const orderId = await generateOrderId();
 
-    const order = await Order.create({
-      shopId,
-      orderId,
-      items: orderItems,
-      totalAmount,
-      customerName: customerName || 'Guest',
-      customerPhone: customerPhone || '',
-      tableNumber: tableNumber || '',
-      specialInstructions: specialInstructions || '',
-      paymentMethod,
-      paymentStatus: paymentMethod === 'upi' ? 'pending' : 'pending',
-      orderStatus: 'pending',
-    });
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .insert({
+        shop_id: shopId,
+        order_id: orderId,
+        items: orderItems,
+        total_amount: totalAmount,
+        customer_name: customerName || 'Guest',
+        customer_phone: customerPhone || '',
+        table_number: tableNumber || '',
+        special_instructions: specialInstructions || '',
+        payment_method: paymentMethod,
+        payment_status: 'pending',
+        order_status: 'pending',
+      })
+      .select()
+      .single();
+
+    if (orderError) throw orderError;
+
+    order._id = order.id;
 
     // Emit real-time event to admin
     const io = getIO();
@@ -76,25 +108,32 @@ router.post('/', async (req, res) => {
 router.get('/:shopId', protect, authorize('admin', 'super_admin'), async (req, res) => {
   try {
     const { page = 1, limit = 20, status, date } = req.query;
+    const from = (parseInt(page) - 1) * parseInt(limit);
+    const to = from + parseInt(limit) - 1;
 
-    const filter = { shopId: req.params.shopId };
-    if (status) filter.orderStatus = status;
+    let query = supabase
+      .from('orders')
+      .select('*', { count: 'exact' })
+      .eq('shop_id', req.params.shopId)
+      .order('created_at', { ascending: false })
+      .range(from, to);
+
+    if (status) query = query.eq('order_status', status);
+    
     if (date) {
       const start = new Date(date);
       start.setHours(0, 0, 0, 0);
       const end = new Date(date);
       end.setHours(23, 59, 59, 999);
-      filter.createdAt = { $gte: start, $lte: end };
+      query = query.gte('created_at', start.toISOString()).lte('created_at', end.toISOString());
     }
 
-    const orders = await Order.find(filter)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit));
+    const { data: orders, count: total, error } = await query;
 
-    const total = await Order.countDocuments(filter);
+    if (error) throw error;
 
-    res.json({ orders, total, page: parseInt(page), pages: Math.ceil(total / limit) });
+    const mappedOrders = orders.map(o => ({ ...o, _id: o.id }));
+    res.json({ orders: mappedOrders, total, page: parseInt(page), pages: Math.ceil(total / limit) });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -103,8 +142,20 @@ router.get('/:shopId', protect, authorize('admin', 'super_admin'), async (req, r
 // GET /api/orders/single/:orderId — Get single order by orderId string
 router.get('/single/:orderId', async (req, res) => {
   try {
-    const order = await Order.findOne({ orderId: req.params.orderId }).populate('shopId', 'name logo');
-    if (!order) return res.status(404).json({ message: 'Order not found.' });
+    const { data: order, error } = await supabase
+      .from('orders')
+      .select('*, shops(name, logo)')
+      .eq('order_id', req.params.orderId)
+      .single();
+
+    if (error || !order) return res.status(404).json({ message: 'Order not found.' });
+
+    order._id = order.id;
+    if (order.shops) {
+      order.shopId = { ...order.shops, _id: order.shops.id };
+      delete order.shops;
+    }
+
     res.json({ order });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -116,17 +167,25 @@ router.put('/status', protect, authorize('admin', 'super_admin'), async (req, re
   try {
     const { orderId, orderStatus, paymentStatus } = req.body;
 
-    const order = await Order.findById(orderId);
-    if (!order) return res.status(404).json({ message: 'Order not found.' });
+    const updates = {};
+    if (orderStatus) updates.order_status = orderStatus;
+    if (paymentStatus) updates.payment_status = paymentStatus;
 
-    if (orderStatus) order.orderStatus = orderStatus;
-    if (paymentStatus) order.paymentStatus = paymentStatus;
-    await order.save();
+    const { data: order, error } = await supabase
+      .from('orders')
+      .update(updates)
+      .eq('id', orderId)
+      .select()
+      .single();
+
+    if (error || !order) return res.status(404).json({ message: 'Order not found.' });
+
+    order._id = order.id;
 
     // Emit update
     const io = getIO();
     if (io) {
-      io.to(`shop_${order.shopId}`).emit('order_updated', order);
+      io.to(`shop_${order.shop_id}`).emit('order_updated', order);
     }
 
     res.json({ order });
@@ -135,73 +194,73 @@ router.put('/status', protect, authorize('admin', 'super_admin'), async (req, re
   }
 });
 
+// Analytics and Reports helpers (Group by in JS)
+const groupOrdersForAnalytics = (orders, period) => {
+  const chartData = {};
+  orders.forEach(order => {
+    const date = new Date(order.created_at);
+    let key;
+    if (period === 'daily') {
+      key = `${date.getHours()}:00`;
+    } else {
+      key = date.toISOString().split('T')[0];
+    }
+    
+    if (!chartData[key]) chartData[key] = { _id: key, orders: 0, revenue: 0 };
+    chartData[key].orders += 1;
+    chartData[key].revenue += Number(order.total_amount);
+  });
+  return Object.values(chartData).sort((a,b) => a._id.localeCompare(b._id));
+};
+
 // GET /api/orders/report/:shopId — Admin report generation
 router.get('/report/:shopId', protect, authorize('admin', 'super_admin'), async (req, res) => {
   try {
     const { period = 'weekly' } = req.query;
     const shopId = req.params.shopId;
     
-    const shop = await Shop.findById(shopId);
+    const { data: shop } = await supabase.from('shops').select('*').eq('id', shopId).single();
     
     let startDate = new Date();
     startDate.setHours(0, 0, 0, 0);
-    let groupingFormat = '%Y-%m-%d';
     
     if (period === 'daily') {
       startDate = new Date();
       startDate.setHours(0, 0, 0, 0);
-      groupingFormat = '%H:00';
     } else if (period === 'weekly') {
       startDate.setDate(startDate.getDate() - 7);
     } else if (period === 'monthly') {
       startDate.setMonth(startDate.getMonth() - 1);
     } else if (period === 'annually') {
       startDate.setFullYear(startDate.getFullYear() - 1);
-      groupingFormat = '%Y-%m';
     }
 
-    const [
-      totalOrders,
-      totalRevenueAgg,
-      statusCounts,
-      chartData
-    ] = await Promise.all([
-      Order.countDocuments({ shopId, createdAt: { $gte: startDate } }),
-      Order.aggregate([
-        { $match: { shopId: require('mongoose').Types.ObjectId.createFromHexString(shopId), paymentStatus: 'paid', createdAt: { $gte: startDate } } },
-        { $group: { _id: null, total: { $sum: '$totalAmount' } } }
-      ]),
-      Order.aggregate([
-        { $match: { shopId: require('mongoose').Types.ObjectId.createFromHexString(shopId), createdAt: { $gte: startDate } } },
-        { $group: { _id: '$orderStatus', count: { $sum: 1 } } }
-      ]),
-      Order.aggregate([
-        {
-          $match: {
-            shopId: require('mongoose').Types.ObjectId.createFromHexString(shopId),
-            createdAt: { $gte: startDate }
-          }
-        },
-        {
-          $group: {
-            _id: period === 'daily' 
-                  ? { $dateToString: { format: '%H:00', date: '$createdAt' } } 
-                  : { $dateToString: { format: groupingFormat, date: '$createdAt' } },
-            orders: { $sum: 1 },
-            revenue: { $sum: '$totalAmount' }
-          }
-        },
-        { $sort: { _id: 1 } }
-      ])
-    ]);
+    const { data: orders, error } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('shop_id', shopId)
+      .gte('created_at', startDate.toISOString());
+
+    if (error) throw error;
+
+    const totalOrders = orders.length;
+    const totalRevenue = orders.filter(o => o.payment_status === 'paid').reduce((sum, o) => sum + Number(o.total_amount), 0);
+    
+    const statusCounts = {};
+    orders.forEach(o => {
+      statusCounts[o.order_status] = (statusCounts[o.order_status] || 0) + 1;
+    });
+    const statusCountsArr = Object.entries(statusCounts).map(([status, count]) => ({ _id: status, count }));
+
+    const chartData = groupOrdersForAnalytics(orders, period);
 
     res.json({
       period,
       startDate,
       endDate: new Date(),
       totalOrders,
-      totalRevenue: totalRevenueAgg[0]?.total || 0,
-      statusCounts,
+      totalRevenue,
+      statusCounts: statusCountsArr,
       chartData,
       downloadedBy: req.user.name,
       shopDetails: shop ? { name: shop.name, address: shop.address, phone: shop.phone } : { name: 'Unknown Shop' },
@@ -215,61 +274,41 @@ router.get('/report/:shopId', protect, authorize('admin', 'super_admin'), async 
 router.get('/analytics/:shopId', protect, authorize('admin', 'super_admin'), async (req, res) => {
   try {
     const shopId = req.params.shopId;
-
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const [
-      totalOrders,
-      todayOrders,
-      pendingOrders,
-      revenueAgg,
-      todayRevenueAgg,
-      statusCounts,
-      weeklyData
-    ] = await Promise.all([
-      Order.countDocuments({ shopId }),
-      Order.countDocuments({ shopId, createdAt: { $gte: today } }),
-      Order.countDocuments({ shopId, orderStatus: { $in: ['pending', 'confirmed', 'preparing'] } }),
-      Order.aggregate([
-        { $match: { shopId: require('mongoose').Types.ObjectId.createFromHexString(shopId), paymentStatus: 'paid' } },
-        { $group: { _id: null, total: { $sum: '$totalAmount' } } }
-      ]),
-      Order.aggregate([
-        { $match: { shopId: require('mongoose').Types.ObjectId.createFromHexString(shopId), paymentStatus: 'paid', createdAt: { $gte: today } } },
-        { $group: { _id: null, total: { $sum: '$totalAmount' } } }
-      ]),
-      Order.aggregate([
-        { $match: { shopId: require('mongoose').Types.ObjectId.createFromHexString(shopId) } },
-        { $group: { _id: '$orderStatus', count: { $sum: 1 } } }
-      ]),
-      Order.aggregate([
-        {
-          $match: {
-            shopId: require('mongoose').Types.ObjectId.createFromHexString(shopId),
-            createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
-          }
-        },
-        {
-          $group: {
-            _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
-            orders: { $sum: 1 },
-            revenue: { $sum: '$totalAmount' }
-          }
-        },
-        { $sort: { _id: 1 } }
-      ])
-    ]);
+    const { data: allOrders, error } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('shop_id', shopId);
+
+    if (error) throw error;
+
+    const totalOrders = allOrders.length;
+    const todayOrders = allOrders.filter(o => new Date(o.created_at) >= today).length;
+    const pendingOrders = allOrders.filter(o => ['pending', 'confirmed', 'preparing'].includes(o.order_status)).length;
+    
+    const totalRevenue = allOrders.filter(o => o.payment_status === 'paid').reduce((sum, o) => sum + Number(o.total_amount), 0);
+    const todayRevenue = allOrders.filter(o => o.payment_status === 'paid' && new Date(o.created_at) >= today).reduce((sum, o) => sum + Number(o.total_amount), 0);
+    
+    const statusCounts = {};
+    allOrders.forEach(o => {
+      statusCounts[o.order_status] = (statusCounts[o.order_status] || 0) + 1;
+    });
+    const statusCountsArr = Object.entries(statusCounts).map(([status, count]) => ({ _id: status, count }));
+
+    const lastWeek = new Date();
+    lastWeek.setDate(lastWeek.getDate() - 7);
+    const weeklyOrders = allOrders.filter(o => new Date(o.created_at) >= lastWeek);
+    const weeklyData = groupOrdersForAnalytics(weeklyOrders, 'weekly');
 
     res.json({
       totalOrders,
       todayOrders,
       pendingOrders,
-      totalRevenue: revenueAgg[0]?.total || 0,
-      todayRevenue: todayRevenueAgg[0]?.total || 0,
-      statusCounts,
+      totalRevenue,
+      todayRevenue,
+      statusCounts: statusCountsArr,
       weeklyData,
     });
   } catch (error) {
@@ -281,16 +320,24 @@ router.get('/analytics/:shopId', protect, authorize('admin', 'super_admin'), asy
 router.post('/simulate-upi-payment', async (req, res) => {
   try {
     const { orderId } = req.body;
-    const order = await Order.findById(orderId);
-    if (!order) return res.status(404).json({ message: 'Order not found.' });
+    
+    const { data: order, error } = await supabase
+      .from('orders')
+      .update({
+        payment_status: 'paid',
+        upi_transaction_id: 'UPI' + Date.now()
+      })
+      .eq('id', orderId)
+      .select()
+      .single();
 
-    order.paymentStatus = 'paid';
-    order.upiTransactionId = 'UPI' + Date.now();
-    await order.save();
+    if (error || !order) return res.status(404).json({ message: 'Order not found.' });
+
+    order._id = order.id;
 
     const io = getIO();
     if (io) {
-      io.to(`shop_${order.shopId}`).emit('order_updated', order);
+      io.to(`shop_${order.shop_id}`).emit('order_updated', order);
     }
 
     res.json({ order, message: 'UPI payment simulated successfully.' });

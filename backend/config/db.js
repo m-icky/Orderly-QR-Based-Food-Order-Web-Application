@@ -1,15 +1,19 @@
-const mongoose = require('mongoose');
+const supabase = require('./supabase');
 
 const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(process.env.MONGO_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
-    console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
+    // Basic connectivity check: list tables or just check client config
+    const { data, error } = await supabase.from('users').select('count', { count: 'exact', head: true });
+    
+    if (error && error.code !== 'PGRST116') { // PGRST116 is 'no rows found' which is fine
+        throw error;
+    }
+    
+    console.log(`✅ Supabase Connected: ${process.env.SUPABASE_URL}`);
   } catch (error) {
-    console.error(`❌ MongoDB connection failed: ${error.message}`);
-    process.exit(1);
+    console.error(`❌ Supabase connection failed: ${error.message}`);
+    // We don't exit(1) here in case the tables aren't created yet during first setup
+    // process.exit(1);
   }
 };
 
