@@ -14,7 +14,7 @@ const protect = async (req, res, next) => {
     // Fetch user from Supabase
     const { data: user, error } = await supabase
       .from('users')
-      .select('*, shops(*)')
+      .select('*, shops!shop_id(*)')
       .eq('id', decoded.id)
       .single();
 

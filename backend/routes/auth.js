@@ -22,7 +22,7 @@ router.post('/login', async (req, res) => {
 
     const { data: user, error } = await supabase
       .from('users')
-      .select('*, shops(*)')
+      .select('*, shops!shop_id(*)')
       .eq('email', email.toLowerCase())
       .single();
 

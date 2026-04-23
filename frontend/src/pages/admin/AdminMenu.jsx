@@ -29,7 +29,7 @@ export default function AdminMenu() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['food', shopId],
-    queryFn: () => api.get(`/api/food/${shopId}`).then(r => r.data),
+    queryFn: () => api.get('/api/food/admin/me').then(r => r.data),
     enabled: !!shopId,
   })
 
@@ -86,7 +86,7 @@ export default function AdminMenu() {
     else createMutation.mutate(formData)
   }
 
-  const items = data?.items || []
+  const items = Array.isArray(data) ? data : (data?.items || [])
   const categories = ['all', ...new Set(items.map(i => i.category))]
   const filtered = items.filter(i =>
     (catFilter === 'all' || i.category === catFilter) &&

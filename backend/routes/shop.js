@@ -36,8 +36,10 @@ router.get('/:id', async (req, res) => {
       menu[mappedItem.category].push(mappedItem);
     });
 
-    // Map shop id to _id
+    // Map shop id to _id and other properties
     shop._id = shop.id;
+    shop.upiId = shop.upi_id;
+    shop.qrCode = shop.qr_code;
 
     res.json({ shop, menu, categories: Object.keys(menu) });
   } catch (error) {
@@ -57,6 +59,8 @@ router.get('/admin/me', protect, authorize('admin'), async (req, res) => {
     if (error || !shop) return res.status(404).json({ message: 'Shop not found.' });
     
     shop._id = shop.id;
+    shop.upiId = shop.upi_id;
+    shop.qrCode = shop.qr_code;
     res.json({ shop });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -79,21 +83,18 @@ router.put('/:id', protect, authorize('admin', 'super_admin'), upload.single('lo
       return res.status(403).json({ message: 'Not authorized to update this shop.' });
     }
 
-    const updates = { ...req.body };
-    
-    // Remove Mongoose-specific or read-only fields if they slipped in
-    delete updates._id;
-    delete updates.id;
-    delete updates.owner_id;
-    delete updates.created_at;
-    delete updates.updated_at;
+    const updates = {};
+    if (req.body.name) updates.name = req.body.name;
+    if (req.body.description !== undefined) updates.description = req.body.description;
+    if (req.body.address !== undefined) updates.address = req.body.address;
+    if (req.body.phone !== undefined) updates.phone = req.body.phone;
+    if (req.body.upiId !== undefined) updates.upi_id = req.body.upiId;
+    if (req.body.theme !== undefined) updates.theme = req.body.theme;
+    if (req.body.isOpen !== undefined) updates.is_open = req.body.isOpen === 'true' || req.body.isOpen === true;
 
     if (req.file) {
       updates.logo = await uploadToSupabase(req.file);
     }
-
-    // Convert string fields if needed (Supabase might handle this based on types)
-    if (updates.is_open) updates.is_open = updates.is_open === 'true';
 
     const { data: updatedShop, error: updateError } = await supabase
       .from('shops')

@@ -74,7 +74,7 @@ router.post('/create', protect, authorize('super_admin'), async (req, res) => {
 
     res.status(201).json({
       message: 'Admin and shop created successfully.',
-      user: { _id: user.id, name: user.name, email: user.email, role: user.role },
+      user: { _id: user.id, name: user.name, email: user.email, role: user.role, isActive: user.is_active },
       shop: updatedShop,
     });
   } catch (error) {
@@ -87,7 +87,7 @@ router.get('/list', protect, authorize('super_admin'), async (req, res) => {
   try {
     const { data: admins, error } = await supabase
       .from('users')
-      .select('*, shops(*)')
+      .select('*, shops!shop_id(*)')
       .eq('role', 'admin')
       .order('created_at', { ascending: false });
 
@@ -95,6 +95,7 @@ router.get('/list', protect, authorize('super_admin'), async (req, res) => {
 
     const mappedAdmins = admins.map(admin => {
       admin._id = admin.id;
+      admin.isActive = admin.is_active;
       if (admin.shops) {
         admin.shopId = { ...admin.shops, _id: admin.shops.id };
         delete admin.shops;
@@ -121,12 +122,13 @@ router.put('/:id', protect, authorize('super_admin'), async (req, res) => {
       .from('users')
       .update(updates)
       .eq('id', req.params.id)
-      .select('*, shops(*)')
+      .select('*, shops!shop_id(*)')
       .single();
 
     if (error || !user) return res.status(404).json({ message: 'Admin not found.' });
 
     user._id = user.id;
+    user.isActive = user.is_active;
     if (user.shops) {
       user.shopId = { ...user.shops, _id: user.shops.id };
       delete user.shops;
@@ -178,7 +180,7 @@ router.get('/analytics/global', protect, authorize('super_admin'), async (req, r
   try {
     const { data: orders, error: ordersError } = await supabase
         .from('orders')
-        .select('*, shops(name)')
+        .select('*, shops!fk_orders_shop(name)')
         .order('created_at', { ascending: false });
 
     if (ordersError) throw ordersError;

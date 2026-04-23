@@ -4,6 +4,33 @@ const supabase = require('../config/supabase');
 const { protect, authorize } = require('../middleware/auth');
 const { getIO } = require('../socket/socketManager');
 
+// Helper to map order properties for frontend
+const mapOrder = (o) => {
+  if (!o) return o;
+  const mapped = {
+    ...o,
+    _id: o.id,
+    orderId: o.order_id,
+    orderStatus: o.order_status,
+    paymentStatus: o.payment_status,
+    paymentMethod: o.payment_method,
+    totalAmount: o.total_amount,
+    customerName: o.customer_name,
+    customerPhone: o.customer_phone,
+    tableNumber: o.table_number,
+    specialInstructions: o.special_instructions,
+    createdAt: o.created_at,
+    updatedAt: o.updated_at
+  };
+  
+  if (o.shops) {
+    mapped.shopId = { ...o.shops, _id: o.shops.id };
+    delete mapped.shops;
+  }
+  
+  return mapped;
+};
+
 // Helper to generate unique 5-digit order ID
 async function generateOrderId() {
   let orderId;
@@ -90,15 +117,15 @@ router.post('/', async (req, res) => {
 
     if (orderError) throw orderError;
 
-    order._id = order.id;
+    const mappedOrder = mapOrder(order);
 
     // Emit real-time event to admin
     const io = getIO();
     if (io) {
-      io.to(`shop_${shopId}`).emit('new_order', order);
+      io.to(`shop_${shopId}`).emit('new_order', mappedOrder);
     }
 
-    res.status(201).json({ order });
+    res.status(201).json({ order: mappedOrder });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -132,7 +159,7 @@ router.get('/:shopId', protect, authorize('admin', 'super_admin'), async (req, r
 
     if (error) throw error;
 
-    const mappedOrders = orders.map(o => ({ ...o, _id: o.id }));
+    const mappedOrders = orders.map(o => mapOrder(o));
     res.json({ orders: mappedOrders, total, page: parseInt(page), pages: Math.ceil(total / limit) });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -144,19 +171,13 @@ router.get('/single/:orderId', async (req, res) => {
   try {
     const { data: order, error } = await supabase
       .from('orders')
-      .select('*, shops(name, logo)')
+      .select('*, shops!fk_orders_shop(id, name, logo)')
       .eq('order_id', req.params.orderId)
       .single();
 
     if (error || !order) return res.status(404).json({ message: 'Order not found.' });
 
-    order._id = order.id;
-    if (order.shops) {
-      order.shopId = { ...order.shops, _id: order.shops.id };
-      delete order.shops;
-    }
-
-    res.json({ order });
+    res.json({ order: mapOrder(order) });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -180,15 +201,15 @@ router.put('/status', protect, authorize('admin', 'super_admin'), async (req, re
 
     if (error || !order) return res.status(404).json({ message: 'Order not found.' });
 
-    order._id = order.id;
+    const mappedOrder = mapOrder(order);
 
     // Emit update
     const io = getIO();
     if (io) {
-      io.to(`shop_${order.shop_id}`).emit('order_updated', order);
+      io.to(`shop_${order.shop_id}`).emit('order_updated', mappedOrder);
     }
 
-    res.json({ order });
+    res.json({ order: mappedOrder });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -333,14 +354,14 @@ router.post('/simulate-upi-payment', async (req, res) => {
 
     if (error || !order) return res.status(404).json({ message: 'Order not found.' });
 
-    order._id = order.id;
+    const mappedOrder = mapOrder(order);
 
     const io = getIO();
     if (io) {
-      io.to(`shop_${order.shop_id}`).emit('order_updated', order);
+      io.to(`shop_${order.shop_id}`).emit('order_updated', mappedOrder);
     }
 
-    res.json({ order, message: 'UPI payment simulated successfully.' });
+    res.json({ order: mappedOrder, message: 'UPI payment simulated successfully.' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

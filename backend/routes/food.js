@@ -17,7 +17,35 @@ router.get('/shop/:shopId', async (req, res) => {
 
     if (error) throw error;
 
-    const mappedItems = items.map(item => ({ ...item, _id: item.id }));
+    const mappedItems = items.map(item => ({ 
+      ...item, 
+      _id: item.id,
+      isAvailable: item.is_available,
+      isVeg: item.is_veg
+    }));
+    res.json(mappedItems);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// GET /api/food/:shopId — public/admin compatibility
+router.get('/:shopId', async (req, res) => {
+  try {
+    const { data: items, error } = await supabase
+      .from('food_items')
+      .select('*')
+      .eq('shop_id', req.params.shopId)
+      .order('sort_order', { ascending: true });
+
+    if (error) throw error;
+
+    const mappedItems = items.map(item => ({ 
+      ...item, 
+      _id: item.id,
+      isAvailable: item.is_available,
+      isVeg: item.is_veg
+    }));
     res.json(mappedItems);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -25,7 +53,7 @@ router.get('/shop/:shopId', async (req, res) => {
 });
 
 // GET /api/food/admin/me — admin's own food items
-router.get('/admin/me', protect, authorize('admin'), async (req, res) => {
+router.get('/admin/me', protect, authorize('admin', 'super_admin'), async (req, res) => {
   try {
     const { data: items, error } = await supabase
       .from('food_items')
@@ -36,7 +64,12 @@ router.get('/admin/me', protect, authorize('admin'), async (req, res) => {
 
     if (error) throw error;
 
-    const mappedItems = items.map(item => ({ ...item, _id: item.id }));
+    const mappedItems = items.map(item => ({ 
+      ...item, 
+      _id: item.id,
+      isAvailable: item.is_available,
+      isVeg: item.is_veg
+    }));
     res.json(mappedItems);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -44,16 +77,20 @@ router.get('/admin/me', protect, authorize('admin'), async (req, res) => {
 });
 
 // POST /api/food — admin create item
-router.post('/', protect, authorize('admin'), upload.single('image'), async (req, res) => {
+router.post('/', protect, authorize('admin', 'super_admin'), upload.single('image'), async (req, res) => {
   try {
     const itemData = {
       ...req.body,
       shop_id: req.user.shop_id,
       price: parseFloat(req.body.price),
-      is_veg: req.body.is_veg === 'true' || req.body.is_veg === true,
-      is_available: req.body.is_available === 'true' || req.body.is_available === true,
+      is_veg: (req.body.isVeg !== undefined ? req.body.isVeg : req.body.is_veg) === 'true' || (req.body.isVeg !== undefined ? req.body.isVeg : req.body.is_veg) === true,
+      is_available: (req.body.isAvailable !== undefined ? req.body.isAvailable : req.body.is_available) === 'true' || (req.body.isAvailable !== undefined ? req.body.isAvailable : req.body.is_available) === true,
       sort_order: parseInt(req.body.sort_order || 0),
     };
+
+    // Remove camelCase fields sent by frontend to prevent Supabase schema errors
+    delete itemData.isVeg;
+    delete itemData.isAvailable;
 
     if (req.file) {
       itemData.image = await uploadToSupabase(req.file);
@@ -73,6 +110,8 @@ router.post('/', protect, authorize('admin'), upload.single('image'), async (req
     if (error) throw error;
 
     item._id = item.id;
+    item.isAvailable = item.is_available;
+    item.isVeg = item.is_veg;
     res.status(201).json(item);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -80,15 +119,27 @@ router.post('/', protect, authorize('admin'), upload.single('image'), async (req
 });
 
 // PUT /api/food/:id — admin update item
-router.put('/:id', protect, authorize('admin'), upload.single('image'), async (req, res) => {
+router.put('/:id', protect, authorize('admin', 'super_admin'), upload.single('image'), async (req, res) => {
   try {
     const updates = {
       ...req.body,
     };
 
+    if (updates.isVeg !== undefined) {
+      updates.is_veg = updates.isVeg === 'true' || updates.isVeg === true;
+      delete updates.isVeg;
+    } else if (updates.is_veg !== undefined) {
+      updates.is_veg = updates.is_veg === 'true' || updates.is_veg === true;
+    }
+
+    if (updates.isAvailable !== undefined) {
+      updates.is_available = updates.isAvailable === 'true' || updates.isAvailable === true;
+      delete updates.isAvailable;
+    } else if (updates.is_available !== undefined) {
+      updates.is_available = updates.is_available === 'true' || updates.is_available === true;
+    }
+
     if (updates.price) updates.price = parseFloat(updates.price);
-    if (updates.is_veg !== undefined) updates.is_veg = updates.is_veg === 'true' || updates.is_veg === true;
-    if (updates.is_available !== undefined) updates.is_available = updates.is_available === 'true' || updates.is_available === true;
     if (updates.sort_order) updates.sort_order = parseInt(updates.sort_order);
 
     if (req.file) {
@@ -120,6 +171,8 @@ router.put('/:id', protect, authorize('admin'), upload.single('image'), async (r
     }
 
     item._id = item.id;
+    item.isAvailable = item.is_available;
+    item.isVeg = item.is_veg;
     res.json(item);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -127,7 +180,7 @@ router.put('/:id', protect, authorize('admin'), upload.single('image'), async (r
 });
 
 // PATCH /api/food/:id/toggle — Toggle availability
-router.patch('/:id/toggle', protect, authorize('admin'), async (req, res) => {
+router.patch('/:id/toggle', protect, authorize('admin', 'super_admin'), async (req, res) => {
   try {
     const { data: item, error: fetchError } = await supabase
       .from('food_items')
@@ -148,6 +201,7 @@ router.patch('/:id/toggle', protect, authorize('admin'), async (req, res) => {
     if (updateError) throw updateError;
 
     updatedItem._id = updatedItem.id;
+    updatedItem.isAvailable = updatedItem.is_available;
     res.json(updatedItem);
   } catch (error) {
     res.status(500).json({ message: error.message });

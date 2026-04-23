@@ -33,13 +33,26 @@ CREATE TABLE IF NOT EXISTS shops (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Add foreign key constraint to shops if not named (optional but good for consistency)
+DO $$ 
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_shop_owner') THEN
+    ALTER TABLE shops ADD CONSTRAINT fk_shop_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE;
+  END IF;
+END $$;
+
 -- Add foreign key constraint to users (after shops table is created)
-ALTER TABLE users ADD CONSTRAINT fk_user_shop FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE SET NULL;
+DO $$ 
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_user_shop') THEN
+    ALTER TABLE users ADD CONSTRAINT fk_user_shop FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE SET NULL;
+  END IF;
+END $$;
 
 -- Food Items Table
 CREATE TABLE IF NOT EXISTS food_items (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    shop_id UUID REFERENCES shops(id) ON DELETE CASCADE,
+    shop_id UUID CONSTRAINT fk_food_shop REFERENCES shops(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     description TEXT,
     price NUMERIC NOT NULL DEFAULT 0,
@@ -57,7 +70,7 @@ CREATE TABLE IF NOT EXISTS food_items (
 CREATE TABLE IF NOT EXISTS orders (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     order_id TEXT UNIQUE NOT NULL, -- 5-digit unique ID
-    shop_id UUID REFERENCES shops(id) ON DELETE CASCADE,
+    shop_id UUID CONSTRAINT fk_order_shop REFERENCES shops(id) ON DELETE CASCADE,
     items JSONB NOT NULL,
     total_amount NUMERIC NOT NULL DEFAULT 0,
     customer_name TEXT DEFAULT 'Guest',
@@ -71,6 +84,19 @@ CREATE TABLE IF NOT EXISTS orders (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Ensure fk_order_shop exists and is named correctly
+DO $$ 
+BEGIN
+  -- Drop default constraint if it exists to avoid ambiguity
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_shop_id_fkey') THEN
+    ALTER TABLE orders DROP CONSTRAINT orders_shop_id_fkey;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_order_shop') THEN
+    ALTER TABLE orders ADD CONSTRAINT fk_order_shop FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE;
+  END IF;
+END $$;
 
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
@@ -89,13 +115,20 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
+DROP TRIGGER IF EXISTS update_users_updated_at ON users;
 CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_shops_updated_at ON shops;
 CREATE TRIGGER update_shops_updated_at BEFORE UPDATE ON shops FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_food_items_updated_at ON food_items;
 CREATE TRIGGER update_food_items_updated_at BEFORE UPDATE ON food_items FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_orders_updated_at ON orders;
 CREATE TRIGGER update_orders_updated_at BEFORE UPDATE ON orders FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 -- Seed Super Admin (Password: superadmin123)
 -- Hash generated via bcryptjs (12 rounds)
 INSERT INTO users (name, email, password, role, is_active)
-VALUES ('Super Admin', 'superadmin@orderly.com', '$2a$12$f.BZugdga/aa7esV45HrM.Go6KhSvgEeFrFKsNbf/fH3PlNcKJSve', 'super_admin', true)
+VALUES ('Super Admin', 'superadmin@orderly.com', '$2a$12$rfneTWcwHonq2DoI3mMF8.AsBW66sIOttkQu6vwq9uyJQsECXnooS', 'super_admin', true)
 ON CONFLICT (email) DO NOTHING;
