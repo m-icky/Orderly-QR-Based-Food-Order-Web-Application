@@ -26,12 +26,23 @@ router.post('/login', async (req, res) => {
       .eq('email', email.toLowerCase())
       .single();
 
-    if (error || !user || !user.is_active) {
+    if (error) {
+      console.error('Supabase Login Error:', error);
+    }
+
+    if (!user) {
+      console.log('User not found for email:', email.toLowerCase());
+      return res.status(401).json({ message: 'Invalid credentials.' });
+    }
+
+    if (!user.is_active) {
+      console.log('User is inactive:', email.toLowerCase());
       return res.status(401).json({ message: 'Invalid credentials.' });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
+      console.log('Password mismatch for:', email.toLowerCase());
       return res.status(401).json({ message: 'Invalid credentials.' });
     }
 

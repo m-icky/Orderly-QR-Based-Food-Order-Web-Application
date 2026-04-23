@@ -11,7 +11,7 @@ const connectDB = async () => {
     
     console.log(`✅ Supabase Connected: ${process.env.SUPABASE_URL}`);
   } catch (error) {
-    console.error(`❌ Supabase connection failed: ${error.message}`);
+    console.error(`❌ Supabase connection failed:`, error);
     // We don't exit(1) here in case the tables aren't created yet during first setup
     // process.exit(1);
   }
