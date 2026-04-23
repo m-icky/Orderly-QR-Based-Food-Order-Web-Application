@@ -25,7 +25,7 @@ router.post('/login', async (req, res) => {
       .select('*, shops!shop_id(*)')
       .eq('email', email.trim().toLowerCase())
       .single();
-
+console.log(user);
     if (error) {
       console.error('Supabase Login Error:', error);
     }

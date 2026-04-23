@@ -102,8 +102,8 @@ export default function AdminOrders() {
       ) : (
         <div className="space-y-3">
           {orders.map(order => {
-            const sc = ORDER_STATUS_COLORS[order.orderStatus]
-            const pc = PAYMENT_STATUS_COLORS[order.paymentStatus]
+            const sc = ORDER_STATUS_COLORS[order.orderStatus] || ORDER_STATUS_COLORS.pending
+            const pc = PAYMENT_STATUS_COLORS[order.paymentStatus] || PAYMENT_STATUS_COLORS.pending
             const next = nextStatus[order.orderStatus]
             return (
               <div
@@ -120,10 +120,10 @@ export default function AdminOrders() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-gray-800">{order.customerName}</span>
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${sc.bg} ${sc.text} ${sc.border}`}>
-                        {ORDER_STATUS_LABELS[order.orderStatus]}
+                        {ORDER_STATUS_LABELS[order.orderStatus] || order.orderStatus || 'Pending'}
                       </span>
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${pc.bg} ${pc.text}`}>
-                        {order.paymentMethod.toUpperCase()} · {order.paymentStatus}
+                        {order.paymentMethod?.toUpperCase() || 'CASH'} · {order.paymentStatus || 'pending'}
                       </span>
                     </div>
                     <p className="text-xs text-gray-400 mt-1">

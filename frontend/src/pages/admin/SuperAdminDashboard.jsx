@@ -119,7 +119,7 @@ export default function SuperAdminDashboard() {
         ) : (
           <div className="space-y-3">
             {data.recentOrders.map(order => {
-              const sc = ORDER_STATUS_COLORS[order.orderStatus]
+              const sc = ORDER_STATUS_COLORS[order.orderStatus] || ORDER_STATUS_COLORS.pending
               return (
                 <div key={order._id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
                   <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border border-gray-100 flex-shrink-0">
@@ -129,7 +129,7 @@ export default function SuperAdminDashboard() {
                     <div className="flex items-center gap-2">
                       <p className="font-medium text-sm">{order.shopId?.name || 'Unknown Shop'}</p>
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${sc.bg} ${sc.text} ${sc.border}`}>
-                        {ORDER_STATUS_LABELS[order.orderStatus]}
+                        {ORDER_STATUS_LABELS[order.orderStatus] || order.orderStatus || 'Pending'}
                       </span>
                     </div>
                     <p className="text-xs text-gray-400">{formatDate(order.createdAt)}</p>

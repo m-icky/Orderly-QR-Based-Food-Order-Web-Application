@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const supabase = require('../config/supabase');
 const { protect, authorize } = require('../middleware/auth');
 const QRCode = require('qrcode');
+const mapOrder = require('../utils/mapOrder');
 
 // POST /api/admin/create — Super Admin only
 router.post('/create', protect, authorize('super_admin'), async (req, res) => {
@@ -195,14 +196,7 @@ router.get('/analytics/global', protect, authorize('super_admin'), async (req, r
     
     const totalRevenue = orders.filter(o => o.payment_status === 'paid').reduce((sum, o) => sum + Number(o.total_amount), 0);
     
-    const recentOrders = orders.slice(0, 10).map(o => {
-        o._id = o.id;
-        if (o.shops) {
-            o.shopId = { ...o.shops, _id: o.shops.id };
-            delete o.shops;
-        }
-        return o;
-    });
+    const recentOrders = orders.slice(0, 10).map(o => mapOrder(o));
 
     res.json({ totalAdmins, totalShops, totalOrders, todayOrders, totalRevenue, recentOrders });
   } catch (error) {

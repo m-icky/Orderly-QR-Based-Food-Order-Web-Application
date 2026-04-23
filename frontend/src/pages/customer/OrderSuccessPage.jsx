@@ -31,7 +31,7 @@ export default function OrderSuccessPage() {
   if (!order) return null
 
   const currentStep = STEPS.indexOf(order.orderStatus)
-  const sc = ORDER_STATUS_COLORS[order.orderStatus]
+  const sc = ORDER_STATUS_COLORS[order.orderStatus] || ORDER_STATUS_COLORS.pending
 
   return (
     <div className="min-h-screen bg-gray-50 pb-10">
@@ -56,7 +56,7 @@ export default function OrderSuccessPage() {
         <div className={`rounded-2xl border p-4 mb-4 ${sc.bg} ${sc.border}`}>
           <div className="flex items-center gap-3">
             <div className={`w-3 h-3 rounded-full animate-pulse ${sc.dot}`} />
-            <p className={`font-semibold ${sc.text}`}>Status: {ORDER_STATUS_LABELS[order.orderStatus]}</p>
+            <p className={`font-semibold ${sc.text}`}>Status: {ORDER_STATUS_LABELS[order.orderStatus] || order.orderStatus || 'Pending'}</p>
           </div>
 
           {/* Progress bar */}
