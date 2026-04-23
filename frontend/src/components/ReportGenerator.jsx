@@ -26,7 +26,7 @@ export default function ReportGenerator({ data, isGenerating, onComplete }) {
 
   return (
     <div style={{ position: 'absolute', top: '-9999px', left: '-9999px', width: '8.27in' }}>
-      <div ref={reportRef} style={{ width: '100%', maxWidth: '7.27in', padding: '0.4in', margin: '0 auto', padding: '40px', boxSizing: 'border-box', fontFamily: 'sans-serif', color: '#1f2937', backgroundColor: '#ffffff' }}>
+      <div ref={reportRef} style={{ width: '100%', maxWidth: '7.27in', padding: '0.4in', margin: '0 auto', boxSizing: 'border-box', fontFamily: 'sans-serif', color: '#1f2937', backgroundColor: '#ffffff' }}>
         
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #e5e7eb', paddingBottom: '20px', marginBottom: '30px' }}>
