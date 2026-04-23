@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const supabase = require('../config/supabase');
 const { protect } = require('../middleware/auth');
+const { tryResilientJoin } = require('../utils/supabaseUtils');
 
 const signToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
@@ -20,11 +21,15 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: 'Email and password are required.' });
     }
 
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('*, shops!fk_user_shop(*)')
-      .eq('email', email.trim().toLowerCase())
-      .maybeSingle();
+    let { data: user, error } = await tryResilientJoin(
+      supabase,
+      'users',
+      '*',
+      'shops',
+      '*',
+      (q) => q.eq('email', email.trim().toLowerCase()).maybeSingle()
+    );
+    if (Array.isArray(user)) user = user[0];
 
     if (error) {
       console.error('Supabase Login Error:', error);

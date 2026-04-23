@@ -3,6 +3,7 @@ const router = express.Router();
 const supabase = require('../config/supabase');
 const { protect, authorize } = require('../middleware/auth');
 const { getIO } = require('../socket/socketManager');
+const { tryResilientJoin } = require('../utils/supabaseUtils');
 
 const mapOrder = require('../utils/mapOrder');
 
@@ -144,11 +145,15 @@ router.get('/:shopId', protect, authorize('admin', 'super_admin'), async (req, r
 // GET /api/orders/single/:orderId — Get single order by orderId string
 router.get('/single/:orderId', async (req, res) => {
   try {
-    const { data: order, error } = await supabase
-      .from('orders')
-      .select('*, shops!fk_order_shop(id, name, logo)')
-      .eq('order_id', req.params.orderId)
-      .single();
+    let { data: order, error } = await tryResilientJoin(
+      supabase,
+      'orders',
+      '*',
+      'shops',
+      'id, name, logo',
+      (q) => q.eq('order_id', req.params.orderId).single()
+    );
+    if (Array.isArray(order)) order = order[0];
 
     if (error || !order) return res.status(404).json({ message: 'Order not found.' });
 

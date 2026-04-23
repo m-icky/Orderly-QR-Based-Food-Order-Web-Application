@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const supabase = require('../config/supabase');
+const { tryResilientJoin } = require('../utils/supabaseUtils');
 
 const protect = async (req, res, next) => {
   try {
@@ -12,11 +13,15 @@ const protect = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     // Fetch user from Supabase
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('*, shops!fk_user_shop(*)')
-      .eq('id', decoded.id)
-      .maybeSingle();
+    let { data: user, error } = await tryResilientJoin(
+      supabase,
+      'users',
+      '*',
+      'shops',
+      '*',
+      (q) => q.eq('id', decoded.id).maybeSingle()
+    );
+    if (Array.isArray(user)) user = user[0];
 
     if (error || !user || !user.is_active) {
       const detail = error ? error.message : (!user ? 'User not found' : 'User deactivated');

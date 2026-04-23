@@ -5,6 +5,7 @@ const supabase = require('../config/supabase');
 const { protect, authorize } = require('../middleware/auth');
 const QRCode = require('qrcode');
 const mapOrder = require('../utils/mapOrder');
+const { tryResilientJoin } = require('../utils/supabaseUtils');
 
 // POST /api/admin/create — Super Admin only
 router.post('/create', protect, authorize('super_admin'), async (req, res) => {
@@ -86,11 +87,14 @@ router.post('/create', protect, authorize('super_admin'), async (req, res) => {
 // GET /api/admin/list — Super Admin
 router.get('/list', protect, authorize('super_admin'), async (req, res) => {
   try {
-    const { data: admins, error } = await supabase
-      .from('users')
-      .select('*, shops!fk_user_shop(*)')
-      .eq('role', 'admin')
-      .order('created_at', { ascending: false });
+    const { data: admins, error } = await tryResilientJoin(
+      supabase,
+      'users',
+      '*',
+      'shops',
+      '*',
+      (q) => q.eq('role', 'admin').order('created_at', { ascending: false })
+    );
 
     if (error) throw error;
 
@@ -119,12 +123,15 @@ router.put('/:id', protect, authorize('super_admin'), async (req, res) => {
     if (email) updates.email = email;
     if (isActive !== undefined) updates.is_active = isActive;
 
-    const { data: user, error } = await supabase
-      .from('users')
-      .update(updates)
-      .eq('id', req.params.id)
-      .select('*, shops!fk_user_shop(*)')
-      .single();
+    let { data: user, error } = await tryResilientJoin(
+      supabase,
+      'users',
+      '*',
+      'shops',
+      '*',
+      (q) => q.update(updates).eq('id', req.params.id).select()
+    );
+    if (Array.isArray(user)) user = user[0];
 
     if (error || !user) return res.status(404).json({ message: 'Admin not found.' });
 
@@ -179,10 +186,14 @@ const groupOrdersInJS = (orders, period) => {
 // GET /api/admin/analytics — Super Admin global analytics
 router.get('/analytics/global', protect, authorize('super_admin'), async (req, res) => {
   try {
-    const { data: orders, error: ordersError } = await supabase
-        .from('orders')
-        .select('*, shops!fk_order_shop(name)')
-        .order('created_at', { ascending: false });
+    const { data: orders, error: ordersError } = await tryResilientJoin(
+      supabase, 
+      'orders', 
+      '*', 
+      'shops', 
+      'name', 
+      (q) => q.order('created_at', { ascending: false })
+    );
 
     if (ordersError) throw ordersError;
 
