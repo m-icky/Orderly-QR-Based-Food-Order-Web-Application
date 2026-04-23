@@ -23,7 +23,7 @@ router.post('/login', async (req, res) => {
     const { data: user, error } = await supabase
       .from('users')
       .select('*, shops!shop_id(*)')
-      .eq('email', email.toLowerCase())
+      .eq('email', email.trim().toLowerCase())
       .single();
 
     if (error) {
@@ -31,7 +31,7 @@ router.post('/login', async (req, res) => {
     }
 
     if (!user) {
-      console.log('User not found for email:', email.toLowerCase());
+      console.log(`User not found: "${email.trim().toLowerCase()}" (length: ${email.trim().length})`);
       return res.status(401).json({ message: 'Invalid credentials.' });
     }
 

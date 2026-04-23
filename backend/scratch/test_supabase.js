@@ -16,7 +16,7 @@ async function testLoginQuery() {
     // Using the exact join from auth.js
     const { data: user, error } = await supabase
       .from('users')
-      .select('*, shops!fk_user_shop(*)')
+      .select('*, shops!shop_id(*)')
       .eq('email', email.toLowerCase())
       .single();
 
