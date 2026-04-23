@@ -18,7 +18,7 @@ api.interceptors.response.use(
   err => {
     if (err.response?.status === 401) {
       localStorage.removeItem('orderly_token')
-      localStorage.removeItem('orderly_user')
+      localStorage.removeItem('orderly_auth') // Clear Zustand persist key
       if (!window.location.pathname.includes('/login')) {
         window.location.href = '/admin/login'
       }

@@ -88,7 +88,7 @@ router.get('/list', protect, authorize('super_admin'), async (req, res) => {
   try {
     const { data: admins, error } = await supabase
       .from('users')
-      .select('*, shops!shop_id(*)')
+      .select('*, shops!fk_user_shop(*)')
       .eq('role', 'admin')
       .order('created_at', { ascending: false });
 
@@ -123,7 +123,7 @@ router.put('/:id', protect, authorize('super_admin'), async (req, res) => {
       .from('users')
       .update(updates)
       .eq('id', req.params.id)
-      .select('*, shops!shop_id(*)')
+      .select('*, shops!fk_user_shop(*)')
       .single();
 
     if (error || !user) return res.status(404).json({ message: 'Admin not found.' });
@@ -181,7 +181,7 @@ router.get('/analytics/global', protect, authorize('super_admin'), async (req, r
   try {
     const { data: orders, error: ordersError } = await supabase
         .from('orders')
-        .select('*, shops!fk_orders_shop(name)')
+        .select('*, shops!fk_order_shop(name)')
         .order('created_at', { ascending: false });
 
     if (ordersError) throw ordersError;

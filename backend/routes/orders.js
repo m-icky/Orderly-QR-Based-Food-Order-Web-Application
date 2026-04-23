@@ -146,7 +146,7 @@ router.get('/single/:orderId', async (req, res) => {
   try {
     const { data: order, error } = await supabase
       .from('orders')
-      .select('*, shops!fk_orders_shop(id, name, logo)')
+      .select('*, shops!fk_order_shop(id, name, logo)')
       .eq('order_id', req.params.orderId)
       .single();
 

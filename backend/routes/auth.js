@@ -22,28 +22,33 @@ router.post('/login', async (req, res) => {
 
     const { data: user, error } = await supabase
       .from('users')
-      .select('*, shops!shop_id(*)')
+      .select('*, shops!fk_user_shop(*)')
       .eq('email', email.trim().toLowerCase())
-      .single();
-console.log(user);
+      .maybeSingle();
+
     if (error) {
       console.error('Supabase Login Error:', error);
+      return res.status(500).json({ 
+        message: 'Database error occurred.', 
+        details: error.message,
+        code: error.code 
+      });
     }
 
     if (!user) {
-      console.log(`User not found: "${email.trim().toLowerCase()}" (length: ${email.trim().length})`);
-      return res.status(401).json({ message: 'Invalid credentials.' });
+      console.log(`User not found: "${email.trim().toLowerCase()}"`);
+      return res.status(401).json({ message: 'Invalid credentials: User not found.' });
     }
 
     if (!user.is_active) {
       console.log('User is inactive:', email.toLowerCase());
-      return res.status(401).json({ message: 'Invalid credentials.' });
+      return res.status(401).json({ message: 'Invalid credentials: User deactivated.' });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       console.log('Password mismatch for:', email.toLowerCase());
-      return res.status(401).json({ message: 'Invalid credentials.' });
+      return res.status(401).json({ message: 'Invalid credentials: Password mismatch.' });
     }
 
     const token = signToken(user.id);
@@ -96,10 +101,12 @@ router.post('/change-password', protect, async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(newPassword, 12);
     
-    await supabase
+    const { error: updateError } = await supabase
       .from('users')
       .update({ password: hashedPassword })
       .eq('id', req.user.id);
+
+    if (updateError) throw updateError;
 
     res.json({ message: 'Password updated successfully.' });
   } catch (error) {

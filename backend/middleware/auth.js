@@ -14,12 +14,13 @@ const protect = async (req, res, next) => {
     // Fetch user from Supabase
     const { data: user, error } = await supabase
       .from('users')
-      .select('*, shops!shop_id(*)')
+      .select('*, shops!fk_user_shop(*)')
       .eq('id', decoded.id)
-      .single();
+      .maybeSingle();
 
     if (error || !user || !user.is_active) {
-      return res.status(401).json({ message: 'User not found or deactivated.' });
+      const detail = error ? error.message : (!user ? 'User not found' : 'User deactivated');
+      return res.status(401).json({ message: 'Authentication failed.', details: detail });
     }
 
     // Map id to _id and reorganize shops data to match Mongoose populate('shopId')
