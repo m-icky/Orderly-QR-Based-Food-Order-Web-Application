@@ -37,11 +37,11 @@ export default function UpiPaymentPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['order-id', orderId],
-    queryFn: () => api.get(`/api/orders/single/${orderId.replace('mongo-', '')}`).then(r => r.data),
+    queryFn: () => api.get(`/api/orders/single/${orderId}`).then(r => r.data),
   })
 
   const simulateMutation = useMutation({
-    mutationFn: () => api.post('/api/orders/simulate-upi-payment', { orderId: orderId.replace('mongo-', '') }),
+    mutationFn: () => api.post('/api/orders/simulate-upi-payment', { orderId: data?.order?._id }),
     onSuccess: ({ data: responseData }) => {
       setStep(3)
       toast.success('Payment confirmed!')

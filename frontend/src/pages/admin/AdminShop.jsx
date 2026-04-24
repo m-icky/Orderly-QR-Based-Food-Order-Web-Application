@@ -139,8 +139,8 @@ export default function AdminShop() {
           <h2 className="font-display font-600 text-gray-800 flex items-center gap-2 w-full">
             <QrCode size={18} className="text-brand-500" /> Shop QR Code
           </h2>
-          {!isLocalhost && shop?.qrCode ? (
-            <img src={shop.qrCode} alt="QR Code" className="w-48 h-48 rounded-2xl border-4 border-gray-100 shadow-sm" />
+          {!isLocalhost && shopUrl ? (
+            <img src={shopUrl} alt="QR Code" className="w-48 h-48 rounded-2xl border-4 border-gray-100 shadow-sm" />
           ) : (
             <div className="w-48 h-48 bg-gray-100 rounded-2xl flex items-center justify-center text-gray-300">
               <QrCode size={48} />

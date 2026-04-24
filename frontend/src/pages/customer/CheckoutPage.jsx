@@ -31,7 +31,7 @@ export default function CheckoutPage() {
       const order = data.order
       clearCart()
       if (paymentMethod === 'upi') {
-        navigate(`/shop/${shopId}/upi-payment/${order._id}`)
+        navigate(`/shop/${shopId}/upi-payment/${order.orderId}`)
       } else {
         navigate(`/shop/${shopId}/order-success/${order.orderId}`)
       }
