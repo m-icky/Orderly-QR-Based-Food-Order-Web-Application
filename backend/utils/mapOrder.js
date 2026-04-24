@@ -21,7 +21,7 @@ const mapOrder = (o) => {
   };
   
   if (o.shops) {
-    mapped.shopId = { ...o.shops, _id: o.shops.id };
+    mapped.shopId = { ...o.shops, _id: o.shops.id, upiId: o.shops.upi_id };
     delete mapped.shops;
   }
   

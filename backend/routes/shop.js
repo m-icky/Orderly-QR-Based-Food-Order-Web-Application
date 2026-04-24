@@ -123,7 +123,7 @@ router.post('/:id/regenerate-qr', protect, authorize('admin', 'super_admin'), as
 
     if (fetchError || !shop) return res.status(404).json({ message: 'Shop not found.' });
 
-    const shopUrl = `${process.env.CLIENT_URL}/shop/${shop.id}`;
+    const shopUrl = req.body.url || `${process.env.CLIENT_URL}/shop/${shop.id}`;
     const qrCode = await QRCode.toDataURL(shopUrl, { width: 300, margin: 2 });
     
     const { data: updatedShop, error: updateError } = await supabase

@@ -150,7 +150,7 @@ router.get('/single/:orderId', async (req, res) => {
       'orders',
       '*',
       'shops',
-      'id, name, logo',
+      'id, name, logo, upi_id',
       (q) => q.eq('order_id', req.params.orderId).single()
     );
     if (Array.isArray(order)) order = order[0];

@@ -55,12 +55,18 @@ export default function AdminShop() {
   }
 
   const regenQRMutation = useMutation({
-    mutationFn: () => api.post(`/api/shop/${shopId}/regenerate-qr`),
+    mutationFn: (url) => api.post(`/api/shop/${shopId}/regenerate-qr`, { url }),
     onSuccess: () => { queryClient.invalidateQueries(['shop']); toast.success('QR code regenerated!') },
   })
 
   const shop = data?.shop
+  console.log(shop)
   const shopUrl = `${window.location.origin}/shop/${shopId}`
+  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+
+  const handleRegenQR = () => {
+    regenQRMutation.mutate(shopUrl)
+  }
 
   const handleCopyUrl = () => {
     navigator.clipboard.writeText(shopUrl)
@@ -133,7 +139,7 @@ export default function AdminShop() {
           <h2 className="font-display font-600 text-gray-800 flex items-center gap-2 w-full">
             <QrCode size={18} className="text-brand-500" /> Shop QR Code
           </h2>
-          {shop?.qrCode ? (
+          {!isLocalhost && shop?.qrCode ? (
             <img src={shop.qrCode} alt="QR Code" className="w-48 h-48 rounded-2xl border-4 border-gray-100 shadow-sm" />
           ) : (
             <div className="w-48 h-48 bg-gray-100 rounded-2xl flex items-center justify-center text-gray-300">
@@ -153,7 +159,7 @@ export default function AdminShop() {
               <a href={shopUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary flex-1 flex items-center justify-center gap-2 py-2 text-sm">
                 <ExternalLink size={14} /> Preview
               </a>
-              <button onClick={() => regenQRMutation.mutate()} disabled={regenQRMutation.isPending} className="btn-primary flex-1 flex items-center justify-center gap-2 py-2 text-sm">
+              <button onClick={handleRegenQR} disabled={regenQRMutation.isPending} className="btn-primary flex-1 flex items-center justify-center gap-2 py-2 text-sm">
                 <RefreshCw size={14} className={regenQRMutation.isPending ? 'animate-spin' : ''} />
                 Regenerate
               </button>
